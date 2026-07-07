@@ -1,224 +1,231 @@
-# speaking_clock
+# Speaking Clock
 
-import asyncio
-import datetime
-import os
-import subprocess
-import sys
-import tempfile
-import threading
-import tkinter as tk
-from tkinter import ttk
+A Python-based GUI application that announces the time at regular intervals using text-to-speech (TTS). Perfect for accessibility, background time announcements, or building a talking clock.
+
+## Features
+
+✨ **Key Features:**
+- 🎤 Real-time time announcements using Microsoft Edge TTS
+- 🎯 Multiple voice options (US, UK, Australian accents)
+- 🔊 Adjustable speech rate (+/- 50%)
+- 🖥️ Dark-themed GUI with live clock display
+- 🔁 Automatic hourly/minute announcements
+- 🛑 Manual "Speak Now" button for on-demand announcements
+- ⚡ Cross-platform support (Linux, macOS, Windows)
+- 🔧 Modular, refactored architecture
+
+## Prerequisites
+
+- **Python 3.9+**
+- **Audio playback command:**
+  - Linux: `aplay` (alsa-utils)
+  - macOS: `afplay` (built-in)
+  - Windows: PowerShell with Media.SoundPlayer
+
+## Installation
+
+### 1. Clone the Repository
+
+```bash
+git clone https://github.com/ubuntu1000/speaking_clock.git
+cd speaking_clock
+```
+
+### 2. Install Dependencies
+
+#### On Linux (Debian/Ubuntu):
+```bash
+sudo apt-get install alsa-utils python3-pip python3-venv
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+#### On macOS:
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+#### On Windows:
+```bash
+python -m venv venv
+venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+### 3. Run the Application
+
+```bash
+python main.py
+```
+
+## Project Structure
+
+```
+speaking_clock/
+├── main.py                 # Application entry point
+├── config.py              # Configuration constants
+├── audio_player.py        # Audio playback module
+├── tts_manager.py         # Text-to-speech logic
+├── gui.py                 # GUI components
+├── requirements.txt       # Python dependencies
+└── README.md             # This file
+```
+
+## Usage
+
+### Starting the Application
+
+```bash
+python main.py
+```
+
+### GUI Controls
+
+- **Voice Selector**: Choose from 5 different voices
+- **Rate Selector**: Adjust speech speed (-50% to +50%)
+- **Start Speaking**: Toggle automatic minute announcements
+- **Speak Now**: Manually announce the current time
+- **Status Display**: Real-time status and error messages
+
+### Available Voices
+
+- `en-US-AriaNeural` - Female US English (default)
+- `en-US-GuyNeural` - Male US English
+- `en-US-JennyNeural` - Female US English
+- `en-GB-SoniaNeural` - Female British English
+- `en-AU-NatashaNeural` - Female Australian English
+
+### Speech Rates
+
+- `-50%` - Very slow
+- `-25%` - Slow
+- `+0%` - Normal (default)
+- `+25%` - Fast
+- `+50%` - Very fast
+
+## API Reference
+
+### Core Modules
+
+#### `config.py`
+Centralized configuration with type hints:
+```python
+from config import VOICES, RATES, DEFAULT_VOICE, MAX_WORKER_THREADS
+```
+
+#### `audio_player.py`
+Platform-independent audio playback:
+```python
+from audio_player import AudioPlayer, AudioPlaybackError
 
 try:
-    import edge_tts
-except ImportError:
-    print("Installing edge-tts...")
-    try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "edge-tts"])
-    except subprocess.CalledProcessError:
-        # Newer Debian/Ubuntu ("externally-managed-environment") needs this flag
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "--break-system-packages", "edge-tts"]
-        )
-    import edge_tts
+    AudioPlayer.play_audio("path/to/audio.mp3")
+except AudioPlaybackError as e:
+    print(f"Playback failed: {e}")
+```
 
-VOICES = [
-    "en-US-AriaNeural",
-    "en-US-GuyNeural",
-    "en-US-JennyNeural",
-    "en-GB-SoniaNeural",
-    "en-AU-NatashaNeural",
-]
-RATES = ["-50%", "-25%", "+0%", "+25%", "+50%"]
+#### `tts_manager.py`
+Text-to-speech management with async support:
+```python
+from tts_manager import TTSManager
 
+manager = TTSManager()
+manager.speak("Hello World", voice="en-US-AriaNeural", rate="+0%")
+```
 
-def play_audio(filepath):
-    if sys.platform == "linux":
-        subprocess.run(["aplay", filepath], capture_output=True)
-    elif sys.platform == "darwin":
-        subprocess.run(["afplay", filepath], capture_output=True)
-    else:
-        subprocess.run(
-            [
-                "powershell",
-                "-c",
-                f'(New-Object Media.SoundPlayer "{filepath}").PlaySync()',
-            ],
-            capture_output=True,
-        )
+#### `gui.py`
+GUI components using Tkinter:
+```python
+from gui import SpeakingClockGUI
+import tkinter as tk
 
+root = tk.Tk()
+app = SpeakingClockGUI(root)
+root.mainloop()
+```
 
-def speak(text, voice, rate, on_error=None):
-    """Generate TTS audio and play it. Runs its own asyncio event loop
-    since edge_tts.Communicate.save() is a coroutine, not sync."""
-    tmp = None
-    try:
-        with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
-            tmp = f.name
-        communicate = edge_tts.Communicate(text, voice, rate=rate)
-        asyncio.run(communicate.save(tmp))
-        play_audio(tmp)
-    except Exception as exc:  # noqa: BLE001 - surface any TTS/network error to the UI
-        if on_error:
-            on_error(str(exc))
-    finally:
-        if tmp and os.path.exists(tmp):
-            os.remove(tmp)
+## Troubleshooting
 
+### Issue: "No module named 'edge_tts'"
+**Solution:** Install dependencies
+```bash
+pip install -r requirements.txt
+```
 
-class SpeakingClockGUI:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Speaking Clock")
-        self.root.geometry("400x360")
-        self.root.resizable(False, False)
+### Issue: No sound on Linux
+**Solution:** Ensure ALSA is installed and configured
+```bash
+sudo apt-get install alsa-utils
+alsamixer  # Test audio levels
+```
 
-        self.speaking = False
-        self.thread = None
-        self.last_spoken_minute = None  # (hour, minute) tuple to avoid double/missed announcements
+### Issue: Application hangs on Windows
+**Solution:** Ensure PowerShell is available in PATH. Try:
+```powershell
+[Environment]::GetEnvironmentVariable("Path", "Machine") | ForEach-Object { $_ -split ';' }
+```
 
-        self._build_ui()
+### Issue: TTS takes too long
+**Solution:** Check internet connection (edge-tts requires online access)
 
-    def _build_ui(self):
-        time_frame = tk.Frame(self.root, bg="#1a1a2e")
-        time_frame.pack(fill="x", padx=10, pady=10)
+## Error Handling
 
-        self.time_label = tk.Label(
-            time_frame, font=("Consolas", 48), fg="#00ff88", bg="#1a1a2e"
-        )
-        self.time_label.pack(pady=10)
+The application includes comprehensive error handling:
+- **Network errors**: Displayed as truncated messages on status label
+- **Audio playback failures**: Logged and reported to UI
+- **TTS generation errors**: Caught and gracefully handled
+- **Thread safety**: Uses thread-safe status updates via `Tk.after()`
 
-        self.date_label = tk.Label(
-            time_frame, font=("Arial", 14), fg="#cccccc", bg="#1a1a2e"
-        )
-        self.date_label.pack()
+## Logging
 
-        ctrl_frame = tk.LabelFrame(self.root, text="Controls", padx=10, pady=10)
-        ctrl_frame.pack(fill="x", padx=10, pady=5)
+Enable debug logging by modifying `main.py`:
+```python
+import logging
+logging.basicConfig(level=logging.DEBUG)
+```
 
-        row1 = tk.Frame(ctrl_frame)
-        row1.pack(fill="x", pady=2)
-        tk.Label(row1, text="Voice:").pack(side="left")
-        self.voice_var = tk.StringVar(value=VOICES[0])
-        ttk.Combobox(
-            row1, textvariable=self.voice_var, values=VOICES, state="readonly", width=25
-        ).pack(side="right")
+## Performance Notes
 
-        row2 = tk.Frame(ctrl_frame)
-        row2.pack(fill="x", pady=2)
-        tk.Label(row2, text="Rate:").pack(side="left")
-        self.rate_var = tk.StringVar(value=RATES[2])
-        ttk.Combobox(
-            row2, textvariable=self.rate_var, values=RATES, state="readonly", width=25
-        ).pack(side="right")
+- ✅ Uses thread pool for concurrent TTS generation
+- ✅ Non-blocking UI updates with proper thread synchronization
+- ✅ Efficient minute tracking to prevent duplicate announcements
+- ✅ Automatic cleanup of temporary audio files
 
-        btn_frame = tk.Frame(self.root)
-        btn_frame.pack(pady=10)
+## Dependencies
 
-        self.start_btn = tk.Button(
-            btn_frame,
-            text="Start Speaking",
-            width=15,
-            bg="#00aa55",
-            fg="white",
-            font=("Arial", 12, "bold"),
-            command=self.toggle_speaking,
-        )
-        self.start_btn.pack(side="left", padx=5)
+See `requirements.txt`:
+- `edge-tts` - Microsoft Edge Text-to-Speech API
+- `tkinter` - GUI framework (usually included with Python)
 
-        self.speak_now_btn = tk.Button(
-            btn_frame,
-            text="Speak Now",
-            width=12,
-            bg="#2196F3",
-            fg="white",
-            font=("Arial", 12),
-            command=self.speak_now,
-        )
-        self.speak_now_btn.pack(side="left", padx=5)
+## License
 
-        self.status_label = tk.Label(
-            self.root, text="Stopped", fg="red", font=("Arial", 10)
-        )
-        self.status_label.pack()
+MIT License - feel free to use, modify, and distribute
 
-        self._update_clock()
+## Contributing
 
-    def _update_clock(self):
-        now = datetime.datetime.now()
-        hour = now.hour % 12 or 12
-        minute = now.minute
-        second = now.second
-        period = "AM" if now.hour < 12 else "PM"
+Contributions welcome! Please:
+1. Fork the repository
+2. Create a feature branch
+3. Commit your changes
+4. Push to the branch
+5. Open a Pull Request
 
-        self.time_label.config(text=f"{hour}:{minute:02d}:{second:02d} {period}")
-        self.date_label.config(text=now.strftime("%A, %B %d, %Y"))
-        self.root.after(500, self._update_clock)
+## Future Enhancements
 
-    # -- thread-safe status helpers -------------------------------------
-    def _set_status(self, text, color):
-        self.root.after(0, lambda: self.status_label.config(text=text, fg=color))
+- 🌙 24-hour mode toggle
+- ⏰ Custom announcement intervals
+- 🔔 Notification sounds
+- 💾 Settings persistence
+- 🌐 Multiple language support
+- 📱 System tray integration
 
-    def _report_error(self, message):
-        # Truncate long network/library error messages so the label stays readable
-        short = message if len(message) < 60 else message[:57] + "..."
-        self._set_status(f"Error: {short}", "orange")
+## Support
 
-    @staticmethod
-    def _build_time_text(now):
-        hour = now.hour % 12 or 12
-        minute = now.minute
-        period = "AM" if now.hour < 12 else "PM"
-        if minute > 0:
-            return f"{hour} {minute:02d} {period}"
-        return f"{hour} {period}"
+For issues, questions, or suggestions, please open an [GitHub Issue](https://github.com/ubuntu1000/speaking_clock/issues).
 
-    def toggle_speaking(self):
-        if self.speaking:
-            self.speaking = False
-            self.start_btn.config(text="Start Speaking", bg="#00aa55")
-            self.status_label.config(text="Stopped", fg="red")
-        else:
-            self.speaking = True
-            self.last_spoken_minute = None
-            self.start_btn.config(text="Stop Speaking", bg="#cc3333")
-            self.status_label.config(text="Speaking every minute", fg="green")
-            self.thread = threading.Thread(target=self._speak_loop, daemon=True)
-            self.thread.start()
+---
 
-    def _speak_loop(self):
-        import time as _time
-
-        while self.speaking:
-            now = datetime.datetime.now()
-            current_minute = (now.hour, now.minute)
-            if now.second == 0 and current_minute != self.last_spoken_minute:
-                self.last_spoken_minute = current_minute
-                self._speak_time(now)
-            _time.sleep(0.5)
-
-    def _speak_time(self, now):
-        text = self._build_time_text(now)
-        voice = self.voice_var.get()
-        rate = self.rate_var.get()
-        self._set_status(f"Announcing: {text}", "green" if self.speaking else "blue")
-        threading.Thread(
-            target=speak, args=(text, voice, rate, self._report_error), daemon=True
-        ).start()
-
-    def speak_now(self):
-        now = datetime.datetime.now()
-        text = self._build_time_text(now)
-        voice = self.voice_var.get()
-        rate = self.rate_var.get()
-        self._set_status(f"Speaking: {text}", "blue")
-        threading.Thread(
-            target=speak, args=(text, voice, rate, self._report_error), daemon=True
-        ).start()
-
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = SpeakingClockGUI(root)
-    root.mainloop()
+**Made with ❤️ by ubuntu1000**
