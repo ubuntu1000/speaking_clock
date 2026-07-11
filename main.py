@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import shutil
 import threading
 import tkinter as tk
 from tkinter import ttk
@@ -32,8 +33,22 @@ RATES = ["-50%", "-25%", "+0%", "+25%", "+50%"]
 
 
 def play_audio(filepath):
+    # Choose the best available player for the platform so mp3/wav playback is reliable
+    player = None
     if sys.platform == "linux":
-        subprocess.run(["aplay", filepath], capture_output=True)
+        for cmd in ("mpg123", "mpv", "ffplay", "aplay"):
+            if shutil.which(cmd):
+                player = cmd
+                break
+        if player == "mpg123":
+            subprocess.run([player, "-q", filepath], capture_output=True)
+        elif player == "mpv":
+            subprocess.run([player, "--quiet", "--no-terminal", "--really-quiet", filepath], capture_output=True)
+        elif player == "ffplay":
+            subprocess.run([player, "-nodisp", "-autoexit", "-loglevel", "quiet", filepath], capture_output=True)
+        else:
+            # fallback: aplay may only support wav, but try it as last resort
+            subprocess.run(["aplay", filepath], capture_output=True)
     elif sys.platform == "darwin":
         subprocess.run(["afplay", filepath], capture_output=True)
     else:
@@ -168,9 +183,10 @@ class SpeakingClockGUI:
         hour = now.hour % 12 or 12
         minute = now.minute
         period = "AM" if now.hour < 12 else "PM"
-        if minute > 0:
-            return f"{hour} {minute:02d} {period}"
-        return f"{hour} {period}"
+        # Use a more natural spoken format: "It's 3:05 PM" or "It's 3 PM"
+        if minute == 0:
+            return f"It's {hour} {period}"
+        return f"It's {hour}:{minute:02d} {period}"
 
     def toggle_speaking(self):
         if self.speaking:
