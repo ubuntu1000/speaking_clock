@@ -1,0 +1,3 @@
+# Runtime requirements (none required explicitly; edge-tts is optional and installed on demand)
+# Add runtime dependencies here if your app needs them, e.g.:
+# edge-tts==0.2.2
