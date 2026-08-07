@@ -1,6 +1,7 @@
 import asyncio
 import datetime
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -8,18 +9,8 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 
-try:
-    import edge_tts
-except ImportError:
-    print("Installing edge-tts...")
-    try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "edge-tts"])
-    except subprocess.CalledProcessError:
-        # Newer Debian/Ubuntu ("externally-managed-environment") needs this flag
-        subprocess.check_call(
-            [sys.executable, "-m", "pip", "install", "--break-system-packages", "edge-tts"]
-        )
-    import edge_tts
+# edge_tts is imported lazily inside speak() to avoid side-effects at module import
+# (tests and other importers should not trigger package installation)
 
 VOICES = [
     "en-US-AriaNeural",
@@ -32,10 +23,24 @@ RATES = ["-50%", "-25%", "+0%", "+25%", "+50%"]
 
 
 def play_audio(filepath):
+    # Choose the best available player for the platform so mp3/wav playback is reliable
+    player = None
     if sys.platform == "linux":
-        subprocess.run(["aplay", filepath], capture_output=True)
+        for cmd in ("mpg123", "mpv", "ffplay", "aplay"):
+            if shutil.which(cmd):
+                player = cmd
+                break
+        if player == "mpg123":
+            subprocess.run([player, "-q", filepath], capture_output=True, check=False)
+        elif player == "mpv":
+            subprocess.run([player, "--quiet", "--no-terminal", "--really-quiet", filepath], capture_output=True, check=False)
+        elif player == "ffplay":
+            subprocess.run([player, "-nodisp", "-autoexit", "-loglevel", "quiet", filepath], capture_output=True, check=False)
+        else:
+            # fallback: aplay may only support wav, but try it as last resort
+            subprocess.run(["aplay", filepath], capture_output=True, check=False)
     elif sys.platform == "darwin":
-        subprocess.run(["afplay", filepath], capture_output=True)
+        subprocess.run(["afplay", filepath], capture_output=True, check=False)
     else:
         subprocess.run(
             [
@@ -44,12 +49,24 @@ def play_audio(filepath):
                 f'(New-Object Media.SoundPlayer "{filepath}").PlaySync()',
             ],
             capture_output=True,
+            check=False,
         )
 
 
 def speak(text, voice, rate, on_error=None):
     """Generate TTS audio and play it. Runs its own asyncio event loop
-    since edge_tts.Communicate.save() is a coroutine, not sync."""
+    since edge_tts.Communicate.save() is a coroutine, not sync.
+
+    edge_tts is imported lazily so importing this module doesn't try to
+    install third-party packages during tests or static analysis.
+    """
+    try:
+        import edge_tts
+    except ImportError:
+        if on_error:
+            on_error("edge-tts package not installed; install with 'pip install edge-tts'")
+        return
+
     tmp = None
     try:
         with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as f:
@@ -144,7 +161,7 @@ class SpeakingClockGUI:
         self._update_clock()
 
     def _update_clock(self):
-        now = datetime.datetime.now()
+        now = datetime.datetime.now().astimezone()
         hour = now.hour % 12 or 12
         minute = now.minute
         second = now.second
@@ -168,9 +185,10 @@ class SpeakingClockGUI:
         hour = now.hour % 12 or 12
         minute = now.minute
         period = "AM" if now.hour < 12 else "PM"
-        if minute > 0:
-            return f"{hour} {minute:02d} {period}"
-        return f"{hour} {period}"
+        # Use a more natural spoken format: "It's 3:05 PM" or "It's 3 PM"
+        if minute == 0:
+            return f"It's {hour} {period}"
+        return f"It's {hour}:{minute:02d} {period}"
 
     def toggle_speaking(self):
         if self.speaking:
@@ -189,7 +207,7 @@ class SpeakingClockGUI:
         import time as _time
 
         while self.speaking:
-            now = datetime.datetime.now()
+            now = datetime.datetime.now().astimezone()
             current_minute = (now.hour, now.minute)
             if now.second == 0 and current_minute != self.last_spoken_minute:
                 self.last_spoken_minute = current_minute
@@ -206,7 +224,7 @@ class SpeakingClockGUI:
         ).start()
 
     def speak_now(self):
-        now = datetime.datetime.now()
+        now = datetime.datetime.now().astimezone()
         text = self._build_time_text(now)
         voice = self.voice_var.get()
         rate = self.rate_var.get()
